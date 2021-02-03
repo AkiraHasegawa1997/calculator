@@ -140,8 +140,8 @@ fn main() {
         let readline = rl.readline("> ");
         match readline {
             Ok(line) => {
+                rl.add_history_entry(line.as_str());
                 if let Some(x) = eval(&line) {
-                    rl.add_history_entry(line.as_str());
                     println!("{}", x);
                 } else {
                     eprintln!("invalid formula: {}", &line);
