@@ -24,10 +24,12 @@ struct Node {
     right: Option<Box<Node>>,
 }
 
+/// FORMULA ::= EXPR
 fn formula(i: &str) -> IResult<&str, Node> {
     nom::combinator::all_consuming(expr)(i)
 }
 
+/// EXPR ::= { TERM { + | - } }* TERM
 fn expr(i: &str) -> IResult<&str, Node> {
     let (i, mut s) = many0(pair(term, alt((char('+'), char('-')))))(i)?;
     if s.is_empty() {
@@ -70,6 +72,7 @@ fn expr(i: &str) -> IResult<&str, Node> {
     }
 }
 
+/// TERM ::= { FACTOR { * | / } }* FACTOR
 fn term(i: &str) -> IResult<&str, Node> {
     let (i, mut s) = many0(pair(factor, alt((char('*'), char('/')))))(i)?;
     if s.is_empty() {
@@ -113,6 +116,7 @@ fn term(i: &str) -> IResult<&str, Node> {
     }
 }
 
+/// FACTOR ::= - ( EXPR ) | ( EXPR ) | ATOM
 fn factor(i: &str) -> IResult<&str, Node> {
     if let Ok((i, node_right)) = delimited(pair(char('-'), char('(')), expr, char(')'))(i) {
         let node = Node {
@@ -131,6 +135,7 @@ fn factor(i: &str) -> IResult<&str, Node> {
     }
 }
 
+/// ATOM ::= FLOAT
 fn atom(i: &str) -> IResult<&str, Node> {
     let (i, id) = float(i)?;
     Ok((
@@ -143,6 +148,7 @@ fn atom(i: &str) -> IResult<&str, Node> {
     ))
 }
 
+/// calculate the input formula
 fn eval(input: &str) -> Option<f32> {
     fn traverse(stack: &mut Vec<f32>, node: &Node) {
         if let Some(left_node) = &node.left {
