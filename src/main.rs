@@ -2,7 +2,7 @@ extern crate nom;
 use nom::branch::alt;
 use nom::character::complete::char;
 use nom::multi::many0;
-use nom::number::complete::float;
+use nom::number::complete::double;
 use nom::sequence::delimited;
 use nom::sequence::pair;
 use nom::IResult;
@@ -14,7 +14,7 @@ enum Op {
     Sub,
     Mul,
     Div,
-    Id(f32),
+    Id(f64),
 }
 
 #[derive(Debug, PartialEq)]
@@ -135,9 +135,9 @@ fn factor(i: &str) -> IResult<&str, Node> {
     }
 }
 
-/// ATOM ::= FLOAT
+/// ATOM ::= DOUBLE
 fn atom(i: &str) -> IResult<&str, Node> {
-    let (i, id) = float(i)?;
+    let (i, id) = double(i)?;
     Ok((
         i,
         Node {
@@ -149,8 +149,8 @@ fn atom(i: &str) -> IResult<&str, Node> {
 }
 
 /// calculate the input formula
-fn eval(input: &str) -> Option<f32> {
-    fn traverse(stack: &mut Vec<f32>, node: &Node) {
+fn eval(input: &str) -> Option<f64> {
+    fn traverse(stack: &mut Vec<f64>, node: &Node) {
         if let Some(left_node) = &node.left {
             traverse(stack, left_node);
         }
@@ -184,7 +184,7 @@ fn eval(input: &str) -> Option<f32> {
 
     let input = &input.split_whitespace().collect::<String>();
     if let Ok((_, node)) = formula(input) {
-        let mut stack = Vec::<f32>::new();
+        let mut stack = Vec::<f64>::new();
         traverse(&mut stack, &node);
         stack.pop()
     } else {
