@@ -1,9 +1,10 @@
 extern crate nom;
 use nom::branch::alt;
-use nom::character::complete;
-use nom::combinator::opt;
+use nom::character::complete::char;
+use nom::multi::many0;
 use nom::number::complete::float;
 use nom::sequence::delimited;
+use nom::sequence::pair;
 use nom::IResult;
 use rustyline::Editor;
 
@@ -28,55 +29,106 @@ fn formula(i: &str) -> IResult<&str, Node> {
 }
 
 fn expr(i: &str) -> IResult<&str, Node> {
-    let (i, sub_tree) = term(i)?;
-    if let (i, Some(matched_op)) = opt(alt((complete::char('+'), complete::char('-'))))(i)? {
-        let matched_op = match matched_op {
-            '+' => Op::Add,
-            '-' => Op::Sub,
-            _ => panic!("term parse error"),
-        };
-        let (i, sub2_tree) = expr(i)?;
-        Ok((
-            i,
-            Node {
-                left: Some(Box::new(sub_tree)),
-                right: Some(Box::new(sub2_tree)),
-                op: matched_op,
-            },
-        ))
+    let (i, mut s) = many0(pair(term, alt((char('+'), char('-')))))(i)?;
+    if s.is_empty() {
+        term(i)
     } else {
-        Ok((i, sub_tree))
+        let mut node = match s.remove(0) {
+            (sub_node, '+') => Node {
+                left: Some(Box::new(sub_node)),
+                right: None,
+                op: Op::Add,
+            },
+            (sub_node, '-') => Node {
+                left: Some(Box::new(sub_node)),
+                right: None,
+                op: Op::Sub,
+            },
+            _ => panic!("failed to parse term"),
+        };
+
+        for sn_op in s {
+            let (sub_node, op) = sn_op;
+            node.right = Some(Box::new(sub_node));
+            node = match op {
+                '+' => Node {
+                    left: Some(Box::new(node)),
+                    right: None,
+                    op: Op::Add,
+                },
+                '-' => Node {
+                    left: Some(Box::new(node)),
+                    right: None,
+                    op: Op::Sub,
+                },
+                _ => panic!("failed to parse term"),
+            }
+        }
+        let (i, s) = term(i)?;
+        node.right = Some(Box::new(s));
+        Ok((i, node))
     }
 }
 
 fn term(i: &str) -> IResult<&str, Node> {
-    let (i, sub_tree) = factor(i)?;
-    if let (i, Some(matched_op)) = opt(alt((complete::char('*'), complete::char('/'))))(i)? {
-        let matched_op = match matched_op {
-            '*' => Op::Mul,
-            '/' => Op::Div,
-            _ => panic!("term parse error"),
-        };
-        let (i, sub2_tree) = term(i)?;
-        Ok((
-            i,
-            Node {
-                left: Some(Box::new(sub_tree)),
-                right: Some(Box::new(sub2_tree)),
-                op: matched_op,
-            },
-        ))
+    let (i, mut s) = many0(pair(factor, alt((char('*'), char('/')))))(i)?;
+    if s.is_empty() {
+        factor(i)
     } else {
-        Ok((i, sub_tree))
+        let mut node = match s.remove(0) {
+            (sub_node, '*') => Node {
+                left: Some(Box::new(sub_node)),
+                right: None,
+                op: Op::Mul,
+            },
+            (sub_node, '/') => Node {
+                left: Some(Box::new(sub_node)),
+                right: None,
+                op: Op::Div,
+            },
+            _ => panic!("failed to parse term"),
+        };
+
+        for sn_op in s {
+            let (sub_node, op) = sn_op;
+            node.right = Some(Box::new(sub_node));
+            node = match op {
+                '*' => Node {
+                    left: Some(Box::new(node)),
+                    right: None,
+                    op: Op::Mul,
+                },
+                '/' => Node {
+                    left: Some(Box::new(node)),
+                    right: None,
+                    op: Op::Div,
+                },
+                _ => panic!("failed to parse term"),
+            }
+        }
+
+        let (i, s) = factor(i)?;
+        node.right = Some(Box::new(s));
+        Ok((i, node))
     }
 }
 
 fn factor(i: &str) -> IResult<&str, Node> {
-    let (i, node) = alt((
-        delimited(complete::char('('), expr, complete::char(')')),
-        atom,
-    ))(i)?;
-    Ok((i, node))
+    if let Ok((i, node_right)) = delimited(pair(char('-'), char('(')), expr, char(')'))(i) {
+        let node = Node {
+            left: Some(Box::new(Node {
+                left: None,
+                right: None,
+                op: Op::Id(-1.0),
+            })),
+            right: Some(Box::new(node_right)),
+            op: Op::Mul,
+        };
+        Ok((i, node))
+    } else {
+        let (i, node) = alt((delimited(char('('), expr, char(')')), atom))(i)?;
+        Ok((i, node))
+    }
 }
 
 fn atom(i: &str) -> IResult<&str, Node> {
@@ -153,113 +205,4 @@ fn main() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use nom::combinator::all_consuming;
-    #[test]
-    fn factor_test() {
-        let (_, node) = all_consuming(factor)("(3.2)").unwrap();
-        assert_eq!(
-            node,
-            Node {
-                left: None,
-                right: None,
-                op: Op::Id(3.2)
-            }
-        );
-        let (_, node) = all_consuming(factor)("3.14").unwrap();
-        assert_eq!(
-            node,
-            Node {
-                left: None,
-                right: None,
-                op: Op::Id(3.14)
-            }
-        );
-    }
-    #[test]
-    fn expr_test() {
-        let (_, node) = formula("3*4+4/3").unwrap();
-        let test_node = Node {
-            op: Op::Add,
-            left: Some(Box::new(Node {
-                op: Op::Mul,
-                left: Some(Box::new(Node {
-                    op: Op::Id(3.0),
-                    left: None,
-                    right: None,
-                })),
-                right: Some(Box::new(Node {
-                    op: Op::Id(4.0),
-                    left: None,
-                    right: None,
-                })),
-            })),
-            right: Some(Box::new(Node {
-                op: Op::Div,
-                left: Some(Box::new(Node {
-                    op: Op::Id(4.0),
-                    left: None,
-                    right: None,
-                })),
-                right: Some(Box::new(Node {
-                    op: Op::Id(3.0),
-                    left: None,
-                    right: None,
-                })),
-            })),
-        };
-        assert_eq!(node, test_node);
-        let (_, node) = formula("(3+4)/3").unwrap();
-        let test_node = Node {
-            op: Op::Div,
-            left: Some(Box::new(Node {
-                op: Op::Add,
-                left: Some(Box::new(Node {
-                    op: Op::Id(3.0),
-                    left: None,
-                    right: None,
-                })),
-                right: Some(Box::new(Node {
-                    op: Op::Id(4.0),
-                    left: None,
-                    right: None,
-                })),
-            })),
-            right: Some(Box::new(Node {
-                op: Op::Id(3.0),
-                left: None,
-                right: None,
-            })),
-        };
-        assert_eq!(node, test_node);
-        let (_, node) = formula("((3+4)/(3))").unwrap();
-        let test_node = Node {
-            op: Op::Div,
-            left: Some(Box::new(Node {
-                op: Op::Add,
-                left: Some(Box::new(Node {
-                    op: Op::Id(3.0),
-                    left: None,
-                    right: None,
-                })),
-                right: Some(Box::new(Node {
-                    op: Op::Id(4.0),
-                    left: None,
-                    right: None,
-                })),
-            })),
-            right: Some(Box::new(Node {
-                op: Op::Id(3.0),
-                left: None,
-                right: None,
-            })),
-        };
-        assert_eq!(node, test_node);
-    }
-    #[test]
-    fn eval_test() {
-        let ans = eval("(2+2)/2");
-        assert_eq!(ans, Some(2.0));
-    }
-}
+mod test;
